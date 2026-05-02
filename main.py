@@ -1,103 +1,147 @@
-"""
-Main script for CS4346 Project 2 - Image Classification.
-
-Runs Naive Bayes and Perceptron on digit and face datasets at training
-percentages 10%-100% (step 10), with 5 random trials each.
-Reports mean accuracy, std deviation, and mean training runtime.
-
-Usage:
-    python main.py
-"""
-
 import random
 import time
 import math
 
-from data_loader import load_dataset
-from features import extract_features
-from naive_bayes import NaiveBayes
-from perceptron import Perceptron
+# Step 1: Import functions from each module.
+from a_data_loader import load_dataset
+from b_features    import extract_features
+from c_naive_bayes import naive_bayes_train, naive_bayes_predict
+from d_perceptron  import perceptron_train, perceptron_predict
 
-DIGIT_DATA_DIR = r'digitdata'
-FACE_DATA_DIR  = r'facedata'
-
-PERCENTAGES = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-N_TRIALS = 5
-
-
-def mean(vals):
-    return sum(vals) / len(vals)
+DIGIT_DATA_DIR     = 'digitdata'
+FACE_DATA_DIR      = 'facedata'
+TRAINING_PERCENTS  = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+TRIALS_PER_PERCENT = 5
 
 
-def std(vals):
-    m = mean(vals)
-    return math.sqrt(sum((v - m) ** 2 for v in vals) / len(vals))
+def compute_accuracy(predictions, labels):
+    # Step 2: Count how many predictions match the true labels and return the fraction.
+    correct = 0
+    for predicted_label, true_label in zip(predictions, labels):
+        if predicted_label == true_label:
+            correct += 1
+    return correct / len(labels)
 
 
-def build_features(images):
-    return [extract_features(img) for img in images]
+def compute_mean(values):
+    # Step 3: Calculate the average of a list of numbers.
+    return sum(values) / len(values)
 
 
-def evaluate(classifier_cls, train_feats, train_labels,
-             test_feats, test_labels, pct, n_trials, **kwargs):
-    n_train = len(train_feats)
-    k = max(1, int(n_train * pct / 100))
-
-    accs = []
-    times = []
-    for _ in range(n_trials):
-        indices = random.sample(range(n_train), k)
-        subset_feats  = [train_feats[i]  for i in indices]
-        subset_labels = [train_labels[i] for i in indices]
-
-        clf = classifier_cls(**kwargs)
-        t0 = time.time()
-        clf.train(subset_feats, subset_labels)
-        elapsed = time.time() - t0
-
-        acc = clf.accuracy(test_feats, test_labels)
-        accs.append(acc)
-        times.append(elapsed)
-
-    return mean(accs), std(accs), mean(times)
+def compute_standard_deviation(values):
+    # Step 4: Calculate the standard deviation of a list of numbers.
+    # Standard deviation measures how spread out the accuracy results are across trials.
+    mean_value             = compute_mean(values)
+    squared_differences    = [(value - mean_value) ** 2 for value in values]
+    variance               = sum(squared_differences) / len(values)
+    return math.sqrt(variance)
 
 
-def run_experiment(dataset_name, data_dir, split_train='train', split_test='test'):
-    print(f"\n{'='*60}")
-    print(f"  Dataset: {dataset_name.upper()}")
-    print(f"{'='*60}")
+def sample_training_data(train_feature_vectors, train_labels, percent):
+    # Step 5: Randomly pick a percentage of the training data.
+    # We do this to test how well each classifier learns with less data.
+    total_samples    = len(train_feature_vectors)
+    sample_size      = max(1, int(total_samples * percent / 100))
+    selected_indices = random.sample(range(total_samples), sample_size)
+    sampled_feature_vectors = [train_feature_vectors[index] for index in selected_indices]
+    sampled_labels          = [train_labels[index]          for index in selected_indices]
+    return sampled_feature_vectors, sampled_labels
 
-    print("Loading data...", flush=True)
-    train_images, train_labels = load_dataset(data_dir, dataset_name, 'train')
-    test_images,  test_labels  = load_dataset(data_dir, dataset_name, 'test')
 
-    print(f"  Train: {len(train_images)} images | Test: {len(test_images)} images")
-    print("Extracting features...", flush=True)
-    train_feats = build_features(train_images)
-    test_feats  = build_features(test_images)
+def evaluate_classifier(training_function, predict_function, train_data, test_data, percent):
+    # Step 6: Run multiple trials for one classifier at one training percentage.
+    # Each trial randomly picks a different subset of training data.
+    # We collect accuracy and training time from each trial.
+    train_feature_vectors, train_labels = train_data
+    test_feature_vectors,  test_labels  = test_data
 
-    print(f"  Feature vector length: {len(train_feats[0])}")
+    accuracies     = []
+    training_times = []
 
-    header = f"{'%':>4}  {'NB Acc':>8}  {'NB Std':>8}  {'NB Time':>8}  " \
-             f"{'Pct Acc':>8}  {'Pct Std':>8}  {'Pct Time':>8}"
+    for trial_number in range(TRIALS_PER_PERCENT):
+        # Step 7: Sample a random subset of the training data for this trial.
+        sampled_feature_vectors, sampled_labels = sample_training_data(
+            train_feature_vectors, train_labels, percent
+        )
+
+        # Step 8: Train the classifier and measure how long it takes.
+        start_time        = time.time()
+        model             = training_function(sampled_feature_vectors, sampled_labels)
+        training_duration = time.time() - start_time
+
+        # Step 9: Predict on test data and compute accuracy.
+        predictions = predict_function(model, test_feature_vectors)
+        accuracy    = compute_accuracy(predictions, test_labels)
+        accuracies.append(accuracy)
+        training_times.append(training_duration)
+
+    # Step 10: Return mean accuracy, standard deviation, and mean training time.
+    return compute_mean(accuracies), compute_standard_deviation(accuracies), compute_mean(training_times)
+
+
+def print_result_row(percent, naive_bayes_result, perceptron_result):
+    # Step 11: Print one row of results for both classifiers at a given percentage.
+    naive_bayes_accuracy, naive_bayes_standard_deviation, naive_bayes_time = naive_bayes_result
+    perceptron_accuracy,  perceptron_standard_deviation,  perceptron_time  = perceptron_result
+    print(
+        f"{percent:>3}%  "
+        f"{naive_bayes_accuracy * 100:>7.2f}%  {naive_bayes_standard_deviation * 100:>7.2f}%  {naive_bayes_time:>7.3f}s  "
+        f"{perceptron_accuracy * 100:>7.2f}%  {perceptron_standard_deviation * 100:>7.2f}%  {perceptron_time:>7.3f}s"
+    )
+
+
+def print_table_header():
+    # Step 12: Print the column labels for the results table.
+    header = (
+        f"{'%':>4}  {'NB Accuracy':>12}  {'NB Std Dev':>12}  {'NB Time':>8}  "
+        f"{'Perc Accuracy':>14}  {'Perc Std Dev':>13}  {'Perc Time':>10}"
+    )
     print(f"\n{header}")
     print('-' * len(header))
 
-    for pct in PERCENTAGES:
-        nb_acc, nb_std, nb_time = evaluate(
-            NaiveBayes, train_feats, train_labels,
-            test_feats, test_labels, pct, N_TRIALS
+
+def load_and_extract_features(data_dir, dataset_name, split):
+    # Step 13: Load raw images from disk, then convert each image into a feature vector.
+    images, labels  = load_dataset(data_dir, dataset_name, split)
+    feature_vectors = [extract_features(image) for image in images]
+    return feature_vectors, labels
+
+
+def run_experiment(dataset_name, data_dir):
+    # Step 14: Run the full experiment for one dataset.
+    # Trains and evaluates both classifiers at every training percentage.
+    print(f"\n{'=' * 60}")
+    print(f"  Dataset: {dataset_name.upper()}")
+    print(f"{'=' * 60}")
+
+    # Step 15: Load and featurize the training and test splits.
+    print("Loading data and extracting features...")
+    train_data = load_and_extract_features(data_dir, dataset_name, 'train')
+    test_data  = load_and_extract_features(data_dir, dataset_name, 'test')
+
+    train_feature_vectors, train_labels = train_data
+    test_feature_vectors,  test_labels  = test_data
+
+    print(f"  Train: {len(train_feature_vectors)} images | Test: {len(test_feature_vectors)} images")
+    print(f"  Feature vector length: {len(train_feature_vectors[0])}")
+
+    print_table_header()
+
+    # Step 16: For each training percentage, run trials for both classifiers
+    # and print the results side by side.
+    for percent in TRAINING_PERCENTS:
+        naive_bayes_result = evaluate_classifier(
+            naive_bayes_train, naive_bayes_predict, train_data, test_data, percent
         )
-        pt_acc, pt_std, pt_time = evaluate(
-            Perceptron, train_feats, train_labels,
-            test_feats, test_labels, pct, N_TRIALS, epochs=10
+        perceptron_result = evaluate_classifier(
+            perceptron_train, perceptron_predict, train_data, test_data, percent
         )
-        print(f"{pct:>3}%  "
-              f"{nb_acc*100:>7.2f}%  {nb_std*100:>7.2f}%  {nb_time:>7.3f}s  "
-              f"{pt_acc*100:>7.2f}%  {pt_std*100:>7.2f}%  {pt_time:>7.3f}s")
+        print_result_row(percent, naive_bayes_result, perceptron_result)
 
 
 def main():
+    # Step 17: Set a fixed random seed so results are reproducible.
+    # Then run the experiment on both datasets.
     random.seed(42)
     run_experiment('digits', DIGIT_DATA_DIR)
     run_experiment('faces',  FACE_DATA_DIR)
